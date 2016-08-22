@@ -9,28 +9,54 @@ has 'config_path' =>
 	isa => 'Str'
 );
 
+
 sub parse {
 	my($self) = @_;
 	my @file_lines = File::Slurp::read_file($self->config_path);
-	my %nginx_conf;
-	my $in_block = 0;
+	my $nginx_conf_raw = "";
+
 	foreach my $line (@file_lines) {
-		if($line =~ m/(\w+) \{/){
-			my $block_name = $1;
-			$in_block = $block_name;
-			if($in_block) {
-				if ($nginx_conf{$in_block}{$block_name}) {
-					$nginx_conf{$in_block}{$block_name} .= $line 
-					} else {
-						$nginx_conf{$in_block}{$block_name} = $line 
-					}
 
-			} else {
+		#Stripping blank text in front of everyline 
+		$line =~ s/^\s+//g;
 
-			}
+		#Strip comments
+		$line =~ s/#.*//g;
+
+		#Jsonify "simple" lines
+		$line =~ s/^(\w+)\s+(.*);/"$1":"$2",/g;
+
+		#Convert Nginx hiarchy to json hierachy
+		$line =~ s/(.+)\{/"$1":[\{/g;
+		$line =~ s/\}/\}\],/g;
+
+		#Removing trailing whitespace
+		$line =~ s/\s+$//g;
+
+		next unless $line; #Ignore empty lines
+
+		unless ($line =~ m/".+":|\}\]/) {
+			warn "Failed parsing this line : \n".$line;
+			$line = "";
 		}
+		$nginx_conf_raw .= $line;
 	}
-	warn Dumper(\%nginx_conf);
+	
+	#Striping trailing commas
+	$nginx_conf_raw =~ s/,\}/}/g;
+	chop $nginx_conf_raw;
+
+	#Last step, adding the wrapping brackets
+	$nginx_conf_raw = "{".$nginx_conf_raw."}";
+
+
+	#TODO : 
+	# - Transform non-uniques keys into array
+	# - Escape json reserved characters.
+	
+	warn "\n=========Parsing Progress : \n".$nginx_conf_raw."\n================";
+
+	return $nginx_conf_raw;
 }
 
 1;
